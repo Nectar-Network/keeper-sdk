@@ -1,0 +1,10 @@
+# macOS
+.DS_Store
+._*
+.AppleDouble
+
+# Go
+/keeper
+bin/
+*.test
+*.out
