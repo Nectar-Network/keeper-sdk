@@ -16,6 +16,7 @@ import (
 	"github.com/stellar/go/keypair"
 
 	"github.com/Nectar-Network/keeper-sdk/adapters"
+	"github.com/Nectar-Network/keeper-sdk/dex"
 	"github.com/Nectar-Network/keeper-sdk/soroban"
 	"github.com/Nectar-Network/keeper-sdk/vault"
 )
@@ -83,8 +84,37 @@ func (k *Keeper) Run() error {
 	return nil
 }
 
+// recoverStaleDraw makes the vault whole when a prior cycle left capital drawn
+// but unreturned (e.g. a transient ReturnProceeds failure). Returns up to the
+// outstanding draw from the keeper's USDC on hand — capped at the drawn amount,
+// and a no-op on vaults deployed before get_keeper_draw existed.
+func (k *Keeper) recoverStaleDraw() {
+	if k.cfg.UsdcAddr == "" {
+		return
+	}
+	drawn, err := vault.GetKeeperDraw(k.rpc, k.cfg.Passphrase, k.cfg.VaultContract, k.kp.Address())
+	if err != nil || drawn <= 0 {
+		return
+	}
+	usdc, err := dex.TokenBalance(k.rpc, k.cfg.Passphrase, k.cfg.UsdcAddr, k.kp.Address())
+	if err != nil || usdc <= 0 {
+		slog.Warn("outstanding vault draw but no USDC on hand — holding collateral", "drawn", drawn)
+		return
+	}
+	ret := drawn
+	if usdc < ret {
+		ret = usdc
+	}
+	if err := k.vault.ReturnProceeds(ret, 0); err != nil {
+		slog.Warn("stale-draw recovery failed", "drawn", drawn, "return", ret, "err", err)
+		return
+	}
+	slog.Info("recovered stale vault draw", "drawn", drawn, "returned", ret)
+}
+
 // cycle runs every adapter once: scan tasks, sort by priority, execute.
 func (k *Keeper) cycle() {
+	k.recoverStaleDraw()
 	for _, ad := range k.adapters {
 		tasks, err := ad.GetTasks(k.rpc)
 		if err != nil {
