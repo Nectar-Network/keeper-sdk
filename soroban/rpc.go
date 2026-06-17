@@ -59,10 +59,15 @@ func (c *Client) Send(txXDR string) (string, error) {
 		ErrorResultXDR string `json:"errorResultXdr"`
 	}
 	if err := c.call("sendTransaction", map[string]string{"transaction": txXDR}, &r); err != nil {
-		return "", err
+		// Transport failure: the node may have received and broadcast the tx even
+		// though we never saw the response. Treat as broadcast-ambiguous so the
+		// retry layer does not resubmit with a fresh sequence (double-execution).
+		// A stateless keeper re-attempts on its next cycle anyway.
+		return "", &BroadcastError{Err: err}
 	}
 	if r.Status == "ERROR" {
-		return "", fmt.Errorf("send tx: %s", r.ErrorResultXDR)
+		// Rejected before broadcast (bad sequence/fee/malformed). Safe to retry.
+		return "", fmt.Errorf("send tx rejected: %s", r.ErrorResultXDR)
 	}
 	return r.Hash, nil
 }
@@ -79,13 +84,13 @@ func (c *Client) AwaitTx(hash string, timeout time.Duration) (*TxResult, error) 
 		case "SUCCESS":
 			return &r, nil
 		case "FAILED":
-			return nil, fmt.Errorf("tx %s failed: %s", hash[:8], r.ResultXDR)
+			return nil, fmt.Errorf("tx %s failed: %s", shortHash(hash), r.ResultXDR)
 		}
 		select {
 		case <-time.After(3 * time.Second):
 		}
 	}
-	return nil, fmt.Errorf("tx %s timed out", hash[:8])
+	return nil, fmt.Errorf("tx %s timed out", shortHash(hash))
 }
 
 func (c *Client) GetEvents(startLedger int64, contractID string) ([]Event, error) {

@@ -8,6 +8,7 @@
 package keeper
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -68,9 +69,16 @@ func (k *Keeper) Keypair() *keypair.Full { return k.kp }
 // Config returns the keeper configuration.
 func (k *Keeper) Config() Config { return k.cfg }
 
-// Run starts the monitoring loop and blocks until the process exits. It returns
-// an error immediately if no adapters are registered.
-func (k *Keeper) Run() error {
+// Run starts the monitoring loop and blocks until the process exits. It is
+// equivalent to RunContext(context.Background()) and returns an error
+// immediately if no adapters are registered.
+func (k *Keeper) Run() error { return k.RunContext(context.Background()) }
+
+// RunContext starts the monitoring loop and blocks until ctx is cancelled,
+// returning ctx.Err() for graceful shutdown (e.g. wire ctx to SIGINT/SIGTERM).
+// It runs one cycle immediately, then once per PollInterval. Returns an error
+// immediately if no adapters are registered.
+func (k *Keeper) RunContext(ctx context.Context) error {
 	if len(k.adapters) == 0 {
 		return errors.New("keeper: no adapters registered")
 	}
@@ -78,10 +86,15 @@ func (k *Keeper) Run() error {
 		"name", k.cfg.KeeperName, "adapters", len(k.adapters), "interval_s", k.cfg.PollInterval)
 	ticker := time.NewTicker(time.Duration(k.cfg.PollInterval) * time.Second)
 	defer ticker.Stop()
-	for range ticker.C {
+	for {
 		k.cycle()
+		select {
+		case <-ctx.Done():
+			slog.Info("keeper stopping", "reason", ctx.Err())
+			return ctx.Err()
+		case <-ticker.C:
+		}
 	}
-	return nil
 }
 
 // recoverStaleDraw makes the vault whole when a prior cycle left capital drawn

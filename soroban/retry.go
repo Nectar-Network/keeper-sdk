@@ -1,6 +1,7 @@
 package soroban
 
 import (
+	"errors"
 	"strings"
 	"time"
 
@@ -24,6 +25,13 @@ func DefaultRetry() RetryConfig {
 // fee / resource issues retry; deterministic contract failures do not.
 func isRetryable(err error) bool {
 	if err == nil {
+		return false
+	}
+	// A broadcast (or possibly-broadcast) transaction must never be resubmitted
+	// with a fresh sequence — that is exactly the double-execution hazard. This
+	// takes precedence over any string heuristic below.
+	var be *BroadcastError
+	if errors.As(err, &be) {
 		return false
 	}
 	s := strings.ToLower(err.Error())

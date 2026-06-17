@@ -121,11 +121,29 @@ func (a *Adapter) Execute(rpc *soroban.Client, kp *keypair.Full, task adapters.T
 		return &adapters.Result{Block: ledger, Note: fmt.Sprintf("not profitable (%.4f < %.4f)", ratio, a.cfg.MinProfit)}, nil
 	}
 
+	// The draw is sized by summing raw bid amounts, which is only valid when the
+	// debt being repaid is USDC itself: the keeper draws and pays USDC, so a
+	// non-USDC bid would require a USDC→bid-asset swap the keeper does not
+	// perform. Refuse mixed/non-USDC bids rather than drawing a USDC-stroop count
+	// that actually denominates a different asset (wrong-units over/under-draw).
+	if a.cfg.UsdcAddr != "" {
+		for asset := range auction.Bid {
+			if asset != a.cfg.UsdcAddr {
+				return &adapters.Result{Block: ledger,
+					Note: fmt.Sprintf("unsupported non-USDC bid asset %s — skipping", asset)}, nil
+			}
+		}
+	}
+
 	bidAmt := int64(0)
 	for _, amt := range auction.Bid {
-		if amt != nil {
-			bidAmt += amt.Int64()
+		if amt == nil {
+			continue
 		}
+		if !amt.IsInt64() {
+			return &adapters.Result{Block: ledger, Note: "bid amount exceeds int64 range — skipping"}, nil
+		}
+		bidAmt += amt.Int64()
 	}
 
 	res := &adapters.Result{Block: ledger, Drew: bidAmt}
@@ -189,6 +207,9 @@ func (a *Adapter) swapCollateral(kp *keypair.Full, pool *core.PoolState, auction
 	for asset, amt := range auction.Lot {
 		if amt == nil {
 			continue
+		}
+		if !amt.IsInt64() {
+			continue // implausibly large lot amount — skip rather than truncate
 		}
 		v := amt.Int64()
 		if v <= 0 {

@@ -36,9 +36,19 @@ func (c *Client) Invoke(horizonURL string, kp *keypair.Full, passphrase, contrac
 	}
 	hash, err := c.Send(signedXDR)
 	if err != nil {
+		// Send already classifies broadcast-ambiguous failures as BroadcastError;
+		// pre-broadcast rejections (status ERROR) stay plain/retryable.
 		return nil, err
 	}
-	return c.AwaitTx(hash, 30*1e9) // 30s
+	// Past this point the tx IS broadcast (we hold its hash). Any await failure —
+	// timeout, transient RPC error, or on-chain FAILED — must not trigger a
+	// resubmit with a fresh sequence, or a draw/fill could execute twice. Wrap so
+	// InvokeWithRetry treats it as terminal; reconcile via on-chain state instead.
+	res, err := c.AwaitTx(hash, 30*1e9) // 30s
+	if err != nil {
+		return res, &BroadcastError{Hash: hash, Err: err}
+	}
+	return res, nil
 }
 
 // SimulateRead calls simulateTransaction for read-only functions (no signing).
