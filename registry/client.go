@@ -67,12 +67,24 @@ func IsRegistered(rpc *soroban.Client, passphrase, registryAddr, addr string) (b
 	return true, nil
 }
 
+// KeeperRegistry contract error codes (see contracts/keeper-registry types.rs).
+const (
+	regErrAlreadyRegistered uint32 = 3
+	regErrNotRegistered     uint32 = 4
+)
+
 func isAlreadyRegistered(s string) bool {
+	if code, ok := soroban.ParseContractCode(s); ok {
+		return code == regErrAlreadyRegistered
+	}
 	ls := strings.ToLower(s)
 	return strings.Contains(ls, "alreadyregistered") || strings.Contains(ls, "already registered")
 }
 
 func isNotRegistered(s string) bool {
+	if code, ok := soroban.ParseContractCode(s); ok {
+		return code == regErrNotRegistered
+	}
 	ls := strings.ToLower(s)
 	return strings.Contains(ls, "notregistered") || strings.Contains(ls, "not registered")
 }
