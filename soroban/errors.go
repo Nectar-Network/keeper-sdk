@@ -1,9 +1,44 @@
 package soroban
 
 import (
+	"encoding/json"
+	"fmt"
 	"regexp"
 	"strconv"
+	"strings"
 )
+
+// rpcErrorMessage extracts a human-readable error from the JSON-RPC "error"
+// field, which nodes return inconsistently: an {code,message} object, a bare
+// string, an empty string, null, or absent. Returns "" when there is no real
+// error so a successful response with `"error":""` is not treated as a failure.
+func rpcErrorMessage(raw json.RawMessage) string {
+	s := strings.TrimSpace(string(raw))
+	if s == "" || s == "null" || s == `""` || s == "{}" {
+		return ""
+	}
+	var obj struct {
+		Code    int    `json:"code"`
+		Message string `json:"message"`
+	}
+	if json.Unmarshal(raw, &obj) == nil && (obj.Message != "" || obj.Code != 0) {
+		if obj.Message == "" {
+			return fmt.Sprintf("code %d", obj.Code)
+		}
+		if obj.Code != 0 {
+			return fmt.Sprintf("%s (code %d)", obj.Message, obj.Code)
+		}
+		return obj.Message
+	}
+	var str string
+	if json.Unmarshal(raw, &str) == nil {
+		if strings.TrimSpace(str) == "" {
+			return ""
+		}
+		return str
+	}
+	return s
+}
 
 var (
 	// Canonical Soroban contract-error rendering, e.g. "Error(Contract, #4)".

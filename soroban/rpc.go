@@ -270,16 +270,17 @@ func (c *Client) call(method string, params any, out any) error {
 	}
 	var rr struct {
 		Result json.RawMessage `json:"result"`
-		Error  *struct {
-			Code    int    `json:"code"`
-			Message string `json:"message"`
-		} `json:"error"`
+		// Decoded loosely: the JSON-RPC spec says "error" is an {code,message}
+		// object, but some Soroban RPC nodes/proxies return it as a bare string —
+		// or even an empty string "" on success. Forcing it into a struct made
+		// every call crash with "cannot unmarshal string into Go struct field".
+		Error json.RawMessage `json:"error"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&rr); err != nil {
 		return fmt.Errorf("rpc %s: decode response: %w", method, err)
 	}
-	if rr.Error != nil {
-		return fmt.Errorf("rpc %s: %s", method, rr.Error.Message)
+	if msg := rpcErrorMessage(rr.Error); msg != "" {
+		return fmt.Errorf("rpc %s: %s", method, msg)
 	}
 	if out == nil {
 		return nil
