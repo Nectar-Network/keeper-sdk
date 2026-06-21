@@ -123,6 +123,12 @@ func (c Config) withDefaults() Config {
 	if c.MinProfit == 0 {
 		c.MinProfit = 1.02
 	}
+	// A hand-built Config{} leaves SlippageBps at 0, which would broadcast swaps
+	// with no slippage bound. Default to 100 bps (1%) — the same value the env
+	// loader uses — so programmatic configs match the documented behaviour.
+	if c.SlippageBps == 0 {
+		c.SlippageBps = 100
+	}
 	if c.KeeperName == "" {
 		c.KeeperName = "nectar-keeper"
 	}
