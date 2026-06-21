@@ -99,6 +99,7 @@ use `rpc.Invoke` and are never auto-retried.
 - [Setup](docs/setup.md) — run a keeper in under 10 minutes
 - [Configuration](docs/configuration.md) — every environment variable
 - [Strategies](docs/strategies.md) — conservative / balanced / aggressive
+- [Risk management](docs/risk.md) — staking/slashing, slippage & oracle anchoring, capital exposure, key hygiene
 - [Troubleshooting](docs/troubleshooting.md)
 - [Writing an adapter](docs/adapters.md)
 
