@@ -26,6 +26,14 @@ import (
 // double fill). Recovery happens on the next keeper cycle instead.
 var ErrTxStatusUnknown = errors.New("transaction status unknown (sent but unconfirmed)")
 
+// IsTxStatusUnknown reports whether err (anywhere in its chain) is a post-send
+// ambiguous failure — the transaction was broadcast but its final status is
+// unknown, so it may have landed. Callers that must not double-execute (swaps,
+// vault draw/return) use this to stop instead of re-trying on another path.
+func IsTxStatusUnknown(err error) bool {
+	return errors.Is(err, ErrTxStatusUnknown)
+}
+
 // txPollInterval is how often AwaitTx polls getTransaction (~ledger close time).
 const txPollInterval = 3 * time.Second
 

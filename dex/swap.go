@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"math/big"
 	"strings"
 	"time"
 
@@ -90,13 +91,19 @@ func (s *SwapClient) SwapToUSDC(kp *keypair.Full, tokenAddr string, amount, refV
 	var attempts []string
 
 	if s.cfg.SoroswapRouter != "" {
-		res, err := s.swapViaSoroswap(kp, tokenAddr, amount, refValueUSDC)
+		res, sent, err := s.swapViaSoroswap(kp, tokenAddr, amount, refValueUSDC)
 		switch {
 		case err == nil:
 			return res, nil
 		case errors.Is(err, ErrSlippageExceeded):
 			// A bad price is a global decision: don't dump on another venue either.
 			return nil, err
+		case sent:
+			// The swap tx was (or may have been) broadcast — the collateral may
+			// already be sold. Falling back would risk a second sale (or burn
+			// fees on a doomed tx), so stop here; the next cycle's stale-draw
+			// recovery returns whatever USDC actually arrived.
+			return nil, fmt.Errorf("soroswap swap sent but outcome unconfirmed, not falling back: %w", err)
 		default:
 			attempts = append(attempts, "soroswap: "+err.Error())
 		}
@@ -117,7 +124,8 @@ func (s *SwapClient) SwapToUSDC(kp *keypair.Full, tokenAddr string, amount, refV
 }
 
 // minOutForSlippage returns the minimum acceptable output for a quoted amount
-// given a slippage tolerance in basis points (100 = 1%).
+// given a slippage tolerance in basis points (100 = 1%). Computed in 128-bit
+// so a huge (e.g. manipulated) quote cannot overflow the int64 multiply.
 func minOutForSlippage(quotedOut int64, slippageBps int) int64 {
 	if quotedOut <= 0 {
 		return 0
@@ -128,7 +136,12 @@ func minOutForSlippage(quotedOut int64, slippageBps int) int64 {
 	if slippageBps > 10000 {
 		slippageBps = 10000
 	}
-	return quotedOut * int64(10000-slippageBps) / 10000
+	r := new(big.Int).Mul(big.NewInt(quotedOut), big.NewInt(int64(10000-slippageBps)))
+	r.Div(r, big.NewInt(10000))
+	if !r.IsInt64() {
+		return 0
+	}
+	return r.Int64()
 }
 
 // belowFloor reports whether a quote is worse than the slippage floor derived
