@@ -2,6 +2,7 @@ package dex
 
 import (
 	"errors"
+	"fmt"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -175,11 +176,31 @@ func TestMinOutForSlippage(t *testing.T) {
 		{1_000_000_000, 10000, 0},         // 100%
 		{1_000_000_000, 12000, 0},         // clamped >100%
 		{0, 100, 0},                       // zero quote
+		// A manipulated/absurd quote must not overflow the multiply: the math
+		// runs in 128-bit, so MaxInt64 at 1% slippage stays exact.
+		{math.MaxInt64, 100, math.MaxInt64/10000*9900 + math.MaxInt64%10000*9900/10000},
 	}
 	for _, c := range cases {
 		if got := minOutForSlippage(c.quoted, c.bps); got != c.want {
 			t.Errorf("minOutForSlippage(%d,%d)=%d want %d", c.quoted, c.bps, got, c.want)
 		}
+	}
+}
+
+// Once a swap tx is (possibly) broadcast, an ambiguous post-send failure
+// (ErrTxStatusUnknown) must classify as "sent" so the router refuses to fall
+// back — the collateral may already be sold. Pre-send failures must not.
+func TestSentClassification_TxStatusUnknown(t *testing.T) {
+	amb := fmt.Errorf("tx deadbeef: %w after 45s", soroban.ErrTxStatusUnknown)
+	if !soroban.IsTxStatusUnknown(amb) {
+		t.Fatal("a wrapped ErrTxStatusUnknown must classify as sent/ambiguous")
+	}
+	wrapped := fmt.Errorf("swap_exact_tokens_for_tokens: %w", amb)
+	if !soroban.IsTxStatusUnknown(wrapped) {
+		t.Fatal("a doubly-wrapped ErrTxStatusUnknown must classify as sent/ambiguous")
+	}
+	if soroban.IsTxStatusUnknown(errors.New("rpc simulateTransaction: boom")) {
+		t.Fatal("pre-send failures must not classify as sent")
 	}
 }
 
