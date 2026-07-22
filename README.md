@@ -17,12 +17,15 @@ Requires Go 1.24+. The only external dependency is the Stellar Go SDK.
 
 ## Quickstart
 
-Set the environment, then run ~10 lines:
+Set the environment, then run ~10 lines. **The live Nectar testnet contract
+addresses to plug in are in [docs/setup.md](docs/setup.md#2-nectar-testnet-addresses-copy-paste)**
+— that guide also covers registering + staking your keeper on-chain (required
+before it can draw capital).
 
 ```sh
 export KEEPER_SECRET=S...            # keeper signing key
-export REGISTRY_CONTRACT=C...        # KeeperRegistry
-export VAULT_CONTRACT=C...           # NectarVault
+export REGISTRY_CONTRACT=C...        # KeeperRegistry  (see docs/setup.md)
+export VAULT_CONTRACT=C...           # NectarVault     (see docs/setup.md)
 export BLEND_POOL=C...               # Blend pool to monitor
 export USDC_CONTRACT=C...            # USDC token (collateral is swapped into this)
 export SOROSWAP_ROUTER=C...          # optional: enables collateral -> USDC swaps
